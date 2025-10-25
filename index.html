@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interactive Avatar Experience</title>
+    <!-- Load Heygen Streaming SDK -->
+    <script src="https://unpkg.com/@heygen/streaming-sdk@1.0.0"></script>
     <style>
         * {
             margin: 0;
@@ -72,10 +74,11 @@
             border: 2px solid #333;
         }
         
-        #avatar-frame {
+        #avatar-video {
             width: 100%;
             height: 100%;
-            border: none;
+            object-fit: cover;
+            background: #000;
         }
         
         .avatar-placeholder {
@@ -122,6 +125,13 @@
             box-shadow: 0 6px 20px rgba(229, 46, 113, 0.4);
         }
         
+        .btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
         .btn-secondary {
             background: linear-gradient(90deg, #333, #555);
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
@@ -129,6 +139,63 @@
         
         .btn-secondary:hover {
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+        }
+        
+        .mic-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .mic-btn {
+            background: #333;
+            border: none;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.2rem;
+        }
+        
+        .mic-btn.muted {
+            background: #e52e71;
+        }
+        
+        .api-config {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px auto;
+            max-width: 700px;
+            text-align: left;
+            border-left: 4px solid #4dabf7;
+        }
+        
+        .api-config h3 {
+            color: #4dabf7;
+            margin-bottom: 15px;
+            font-size: 1.4rem;
+        }
+        
+        .api-input {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .api-input input {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #444;
+            background: #1a1a1a;
+            color: white;
+            font-family: 'Courier New', monospace;
         }
         
         .instructions {
@@ -150,6 +217,22 @@
         .instructions p {
             color: #ccc;
             margin-bottom: 15px;
+        }
+        
+        .code-block {
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+            overflow-x: auto;
+            border: 1px solid #333;
+        }
+        
+        code {
+            color: #4dabf7;
+            font-family: 'Courier New', monospace;
+            display: block;
+            line-height: 1.4;
         }
         
         .features {
@@ -227,6 +310,10 @@
                 flex-direction: column;
                 align-items: center;
             }
+            
+            .api-input {
+                flex-direction: column;
+            }
         }
         
         /* Animation for the avatar container */
@@ -239,6 +326,10 @@
         .pulse {
             animation: pulse 2s infinite;
         }
+        
+        .hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -248,29 +339,69 @@
             <p class="subtitle">Engage with Wayne, our AI-powered avatar for unique conversations</p>
         </header>
         
+        <div class="api-config">
+            <h3>API Configuration</h3>
+            <p>Enter your Heygen API key to enable the interactive avatar:</p>
+            <div class="api-input">
+                <input type="text" id="api-key-input" placeholder="Enter your Heygen API key" value="kPXhuFy04G7">
+                <button class="btn" id="save-api-key">Save API Key</button>
+            </div>
+            <p><small>Your API key is stored locally in your browser and never sent to our servers.</small></p>
+        </div>
+        
         <div class="avatar-section">
             <div class="avatar-container pulse">
                 <div id="avatar-placeholder" class="avatar-placeholder">
                     <div class="avatar-icon">👤</div>
                     <p>Wayne Avatar</p>
-                    <p>Click "Load Avatar" to start</p>
+                    <p>Configure API key and click "Start Session"</p>
                 </div>
-                <iframe id="avatar-frame" style="display: none;"></iframe>
+                <video id="avatar-video" class="hidden" autoplay playsinline></video>
             </div>
             
             <div class="controls">
-                <button class="btn" id="load-btn">Load Avatar</button>
-                <button class="btn btn-secondary" id="direct-link">Open in New Tab</button>
-                <button class="btn btn-secondary" id="reset-btn">Reset</button>
+                <button class="btn" id="start-btn">Start Session</button>
+                <button class="btn btn-secondary" id="stop-btn" disabled>Stop Session</button>
             </div>
             
-            <div id="status" class="status" style="display: none;"></div>
+            <div class="mic-controls">
+                <button class="mic-btn" id="mic-btn" title="Toggle Microphone" disabled>🎤</button>
+                <span id="mic-status">Microphone: Configure API first</span>
+            </div>
+            
+            <div id="status" class="status status-loading">Waiting for API configuration...</div>
         </div>
         
         <div class="instructions">
-            <h3>About This Avatar</h3>
-            <p>This interactive avatar named "Wayne" uses Heygen's advanced AI technology to create realistic conversational experiences. The avatar can respond to your questions and engage in natural dialogue with lifelike expressions.</p>
-            <p>If the avatar doesn't load properly, try opening it in a new tab or check your browser's security settings.</p>
+            <h3>How to Use Your API Key</h3>
+            <p>Follow these steps to get your avatar working:</p>
+            
+            <div class="code-block">
+                <code>
+                    // 1. Initialize the Heygen SDK with your API key<br>
+                    const heygenSDK = new HeygenStreamingSDK.StreamingClient({<br>
+                    &nbsp;&nbsp;apiKey: 'kPXhuFy04G7' // Your API key here<br>
+                    });<br>
+                    <br>
+                    // 2. Create a session with your avatar<br>
+                    const session = await heygenSDK.createSession({<br>
+                    &nbsp;&nbsp;avatarName: 'Wayne_20240711'<br>
+                    });<br>
+                    <br>
+                    // 3. Start the session with video element<br>
+                    await session.start({<br>
+                    &nbsp;&nbsp;videoElement: document.getElementById('avatar-video')<br>
+                    });
+                </code>
+            </div>
+            
+            <p><strong>Important Notes:</strong></p>
+            <ul style="color: #ccc; margin-left: 20px; margin-bottom: 15px;">
+                <li>Make sure your API key has access to the Streaming API</li>
+                <li>The avatar name must match exactly: 'Wayne_20240711'</li>
+                <li>You need microphone permissions for interactive conversations</li>
+                <li>For production, generate access tokens server-side for security</li>
+            </ul>
         </div>
         
         <div class="features">
@@ -286,76 +417,192 @@
             </div>
             <div class="feature">
                 <div class="feature-icon">🚀</div>
-                <h4>Advanced AI</h4>
-                <p>Powered by cutting-edge artificial intelligence</p>
+                <h4>WebRTC Powered</h4>
+                <p>Low-latency streaming technology</p>
             </div>
         </div>
         
         <footer>
-            <p>Powered by Heygen Interactive Avatar Technology</p>
+            <p>Powered by Heygen Streaming SDK | API Key: <span id="api-key-display">Not configured</span></p>
         </footer>
     </div>
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const avatarFrame = document.getElementById('avatar-frame');
+            const avatarVideo = document.getElementById('avatar-video');
             const avatarPlaceholder = document.getElementById('avatar-placeholder');
-            const loadBtn = document.getElementById('load-btn');
-            const directLinkBtn = document.getElementById('direct-link');
-            const resetBtn = document.getElementById('reset-btn');
+            const startBtn = document.getElementById('start-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            const micBtn = document.getElementById('mic-btn');
+            const micStatus = document.getElementById('mic-status');
             const statusDiv = document.getElementById('status');
             const avatarContainer = document.querySelector('.avatar-container');
+            const apiKeyInput = document.getElementById('api-key-input');
+            const saveApiKeyBtn = document.getElementById('save-api-key');
+            const apiKeyDisplay = document.getElementById('api-key-display');
             
-            const heygenUrl = "https://labs.heygen.com/interactive-avatar/share?share=eyJxdWFsaXR5IjoiaGlnaCIsImF2YXRhck5hbWUiOiJXYXluZV8yMDI0MDcxMSIsInByZXZpZXdJbWciOiJodHRwczovL2ZpbGVzMi5oZXlnZW4uYWkvYXZhdGFyL3YzL2EzZmRiMGM2NTIwMjRmNzk5ODRhYWVjMTFlYmYyNjk0XzM0MzUwL3ByZXZpZXdfdGFyZ2V0LndlYnAiLCJuZWVkUmVtb3ZlQmFja2dyb3VuZCI6ZmFsc2UsImtub3dsZWRnZUJhc2VJZCI6ImM1YzJhMjUxNGM1YjQyZWRiMzE4YWQyZjNlMTRkMDRjIiwidXNlcm5hbWUiOiIyYzA1YzBmZmI4MTQ0NWZjOTVhNGM0YjdjZjhhMzM3MSJ9";
+            let session = null;
+            let isMicMuted = false;
+            let heygenSDK = null;
+            let apiKey = localStorage.getItem('heygen-api-key') || '';
             
-            // Load avatar in iframe
-            loadBtn.addEventListener('click', function() {
-                showStatus('Loading Wayne avatar...', 'loading');
-                
-                // Remove pulse animation
-                avatarContainer.classList.remove('pulse');
-                
-                // Set iframe source and show it
-                avatarFrame.src = heygenUrl;
-                avatarFrame.style.display = 'block';
-                avatarPlaceholder.style.display = 'none';
-                
-                // Check if iframe loads successfully
-                avatarFrame.onload = function() {
-                    showStatus('Avatar loaded successfully!', 'success');
-                };
-                
-                avatarFrame.onerror = function() {
-                    showStatus('Failed to load avatar. Try opening in a new tab.', 'error');
-                    // Fallback to placeholder
-                    avatarFrame.style.display = 'none';
-                    avatarPlaceholder.style.display = 'flex';
-                    avatarPlaceholder.innerHTML = `
-                        <div class="avatar-icon">⚠️</div>
-                        <p>Failed to Load Avatar</p>
-                        <p>Click "Open in New Tab" instead</p>
-                    `;
-                };
+            // Initialize with saved API key if available
+            if (apiKey) {
+                apiKeyInput.value = apiKey;
+                initializeSDK(apiKey);
+            }
+            
+            // Save API key
+            saveApiKeyBtn.addEventListener('click', function() {
+                const newApiKey = apiKeyInput.value.trim();
+                if (newApiKey) {
+                    localStorage.setItem('heygen-api-key', newApiKey);
+                    apiKey = newApiKey;
+                    initializeSDK(apiKey);
+                    showStatus('API key saved successfully!', 'success');
+                } else {
+                    showStatus('Please enter a valid API key', 'error');
+                }
             });
             
-            // Open in new tab
-            directLinkBtn.addEventListener('click', function() {
-                window.open(heygenUrl, '_blank');
+            function initializeSDK(key) {
+                try {
+                    // Update display
+                    apiKeyDisplay.textContent = key.substring(0, 8) + '...';
+                    
+                    // Initialize Heygen SDK with the API key
+                    if (typeof HeygenStreamingSDK !== 'undefined') {
+                        heygenSDK = new HeygenStreamingSDK.StreamingClient({
+                            apiKey: key
+                        });
+                        
+                        showStatus('Heygen SDK initialized successfully! Ready to start session.', 'success');
+                        startBtn.disabled = false;
+                        micBtn.disabled = false;
+                        micStatus.textContent = 'Microphone: Ready';
+                    } else {
+                        showStatus('Heygen SDK not loaded. Check your internet connection.', 'error');
+                    }
+                } catch (error) {
+                    console.error('Failed to initialize SDK:', error);
+                    showStatus('Failed to initialize SDK: ' + error.message, 'error');
+                }
+            }
+            
+            // Start avatar session
+            startBtn.addEventListener('click', async function() {
+                if (!heygenSDK) {
+                    showStatus('Please configure your API key first', 'error');
+                    return;
+                }
+                
+                showStatus('Starting avatar session...', 'loading');
+                
+                try {
+                    // Remove pulse animation
+                    avatarContainer.classList.remove('pulse');
+                    
+                    // Create session with Wayne avatar
+                    session = await heygenSDK.createSession({
+                        avatarName: 'Wayne_20240711'
+                    });
+                    
+                    // Start the session with our video element
+                    await session.start({
+                        videoElement: avatarVideo
+                    });
+                    
+                    // Show video, hide placeholder
+                    avatarPlaceholder.classList.add('hidden');
+                    avatarVideo.classList.remove('hidden');
+                    
+                    // Update UI
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    
+                    showStatus('Avatar session started successfully! You can now speak to Wayne.', 'success');
+                    
+                } catch (error) {
+                    console.error('Failed to start session:', error);
+                    showStatus('Failed to start session: ' + error.message, 'error');
+                    
+                    // Fallback to demo mode if API key is invalid
+                    if (error.message.includes('auth') || error.message.includes('API')) {
+                        showStatus('API key may be invalid. Falling back to demo mode.', 'error');
+                        simulateSession();
+                    }
+                }
             });
             
-            // Reset to initial state
-            resetBtn.addEventListener('click', function() {
-                avatarFrame.src = '';
-                avatarFrame.style.display = 'none';
-                avatarPlaceholder.style.display = 'flex';
-                avatarPlaceholder.innerHTML = `
-                    <div class="avatar-icon">👤</div>
-                    <p>Wayne Avatar</p>
-                    <p>Click "Load Avatar" to start</p>
-                `;
+            // Stop avatar session
+            stopBtn.addEventListener('click', async function() {
+                showStatus('Stopping avatar session...', 'loading');
+                
+                try {
+                    if (session) {
+                        await session.stop();
+                        session = null;
+                    }
+                    
+                    resetUI();
+                    showStatus('Session stopped.', 'success');
+                    setTimeout(() => statusDiv.style.display = 'none', 2000);
+                    
+                } catch (error) {
+                    console.error('Failed to stop session:', error);
+                    showStatus('Failed to stop session: ' + error.message, 'error');
+                    resetUI();
+                }
+            });
+            
+            // Toggle microphone
+            micBtn.addEventListener('click', function() {
+                if (!session) return;
+                
+                isMicMuted = !isMicMuted;
+                
+                if (isMicMuted) {
+                    micBtn.classList.add('muted');
+                    micBtn.innerHTML = '🔇';
+                    micStatus.textContent = 'Microphone: Muted';
+                    showStatus('Microphone muted', 'success');
+                } else {
+                    micBtn.classList.remove('muted');
+                    micBtn.innerHTML = '🎤';
+                    micStatus.textContent = 'Microphone: Active';
+                    showStatus('Microphone active', 'success');
+                }
+                
+                // Set microphone state in session
+                if (session) {
+                    session.setMicrophoneMuted(isMicMuted);
+                }
+            });
+            
+            function resetUI() {
+                avatarVideo.classList.add('hidden');
+                avatarPlaceholder.classList.remove('hidden');
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
                 avatarContainer.classList.add('pulse');
-                statusDiv.style.display = 'none';
-            });
+                
+                // Reset microphone state
+                isMicMuted = false;
+                micBtn.classList.remove('muted');
+                micBtn.innerHTML = '🎤';
+                micStatus.textContent = 'Microphone: Ready';
+            }
+            
+            function simulateSession() {
+                // Demo fallback for testing
+                setTimeout(() => {
+                    avatarPlaceholder.classList.add('hidden');
+                    avatarVideo.classList.remove('hidden');
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                    showStatus('Demo mode: Avatar session started (simulated)', 'success');
+                }, 1000);
+            }
             
             function showStatus(message, type) {
                 statusDiv.textContent = message;
@@ -364,7 +611,7 @@
                 statusDiv.style.display = 'block';
             }
             
-            // Add some interactive effects
+            // Add interactive effects
             avatarContainer.addEventListener('mouseenter', function() {
                 this.style.transform = 'scale(1.02)';
                 this.style.transition = 'transform 0.3s ease';
@@ -373,6 +620,11 @@
             avatarContainer.addEventListener('mouseleave', function() {
                 this.style.transform = 'scale(1)';
             });
+            
+            // Check if SDK is available
+            if (typeof HeygenStreamingSDK === 'undefined') {
+                showStatus('Heygen SDK loading failed. Check your internet connection.', 'error');
+            }
         });
     </script>
 </body>
